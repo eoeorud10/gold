@@ -1,0 +1,316 @@
+
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>방문 기록 앱</title>
+  <style>
+    body, table, th, td, input {
+      margin: 0;
+    }
+    body {
+      font-family: sans-serif;
+      margin: 10px;
+      overflow-x: auto;
+      -webkit-text-size-adjust: none;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      min-width: unset;
+      max-width: 100%;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 2px;
+      text-align: center;
+      font-size: 13px;
+    }
+    input[type="text"] {
+      width: 42px;
+      padding: 2px;
+      margin: 0;
+      font-size: 13px;
+      box-sizing: border-box;
+    }
+    .medium-input {
+      width: 42px;
+    }
+    .time-cell {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .entry {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+    }
+    .entry span {
+      font-size: 12px;
+    }
+    .entry button {
+      background: red;
+      color: white;
+      border: none;
+      padding: 1px 5px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    button {
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+<button onclick="clearAllData()" style="margin-bottom:10px;">모두 초기화</button>
+  <h2>오늘 날짜: <span id="today"></span></h2>
+  <div style="overflow-x: auto;">
+    <table id="visitationTable">
+      <thead>
+        <tr>
+          <th>이름</th>
+          <th>가게</th>
+          <th style="width: 300px;">시간 기록</th>
+          <th>버튼</th>
+          <th>초기화</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+  </div>
+
+  <script>
+    const MAX_PEOPLE = 30;
+    const tableBody = document.getElementById("tableBody");
+    document.getElementById("today").textContent = new Date().toISOString().slice(0, 10);
+
+    function formatTime(date) {
+      if (!(date instanceof Date) || isNaN(date.getTime())) return "--:--";
+      let hours = date.getHours();
+      let minutes = date.getMinutes();
+      let ampm = hours >= 12 ? 'PM' : 'AM';
+      hours = hours % 12;
+      hours = hours ? hours : 12;
+      minutes = minutes < 10 ? '0' + minutes : minutes;
+      return ampm + ' ' + hours + ':' + minutes;
+    }
+
+    function parseTimeString(timeStr) {
+      const match = timeStr.match(/(AM|PM)\s*(\d+):(\d+)/i);
+      if (!match) return new Date();
+      let [, ampm, h, m] = match;
+      h = parseInt(h, 10);
+      m = parseInt(m, 10);
+      if (ampm.toUpperCase() === "PM" && h !== 12) h += 12;
+      if (ampm.toUpperCase() === "AM" && h === 12) h = 0;
+      const now = new Date();
+      now.setHours(h, m, 0, 0);
+      return now;
+    }
+
+    function addTime(base, hrs, mins = 0) {
+      const newDate = new Date(base.getTime());
+      newDate.setHours(newDate.getHours() + hrs);
+      newDate.setMinutes(newDate.getMinutes() + mins);
+      return newDate;
+    }
+
+    function createRow(index) {
+      const row = document.createElement("tr");
+
+      const nameTd = document.createElement("td");
+      const nameInput = document.createElement("input");
+      nameInput.classList.add("medium-input");
+      nameInput.addEventListener("focus", function () { this.select(); });
+      nameTd.appendChild(nameInput);
+      row.appendChild(nameTd);
+
+
+
+      const storeTd = document.createElement("td");
+      const storeSelect = document.createElement("select");
+      const storeInput = document.createElement("input");
+      storeSelect.style.width = "42px";
+      storeInput.style.width = "42px";
+      storeInput.placeholder = "직접";
+      const shops = ["3x", "4u", "A+", "A3", "P&P", "S", "고구려", "골드문", "그레이스", "금복주", "나무", "네이버", "문", "부엉이", "비긴", "색연필", "시마", "아너스", "아프리카", "에비앙", "여우비", "이브닝", "인스타", "천일", "청담", "타이티", "토마토", "퍼스트", "포텐", "프라하", "플레이", "플렉스"];
+      shops.forEach(shop => {{
+        const opt = document.createElement("option");
+        opt.value = shop;
+        opt.textContent = shop;
+        storeSelect.appendChild(opt);
+      }});
+      storeSelect.onchange = () => {{
+        storeInput.value = storeSelect.value;
+      }};
+      storeTd.appendChild(storeSelect);
+      storeTd.appendChild(storeInput);
+      row.appendChild(storeTd);
+
+      const timeTd = document.createElement("td");
+      timeTd.classList.add("time-cell");
+      row.appendChild(timeTd);
+
+      const btnTd = document.createElement("td");
+      const enterBtn = document.createElement("button");
+      enterBtn.textContent = "입장";
+
+      let extensionCount = 0;
+      let input = null;
+      let latestTime = null;
+      let entries = [];
+
+      function refreshEntries() {
+        timeTd.querySelectorAll('.entry').forEach(e => e.remove());
+        let current = parseTimeString(input.value);
+        latestTime = current;
+
+        for (let i = 0; i < extensionCount; i++) {
+          let duration = (i === 0) ? [2, 0] : (i === 1 ? [1, 30] : [1, 0]);
+          const start = new Date(latestTime);
+          const end = addTime(start, duration[0], duration[1]);
+          const label = (i === 0) ? "입장" : `${i}차 연장`;
+
+          const div = document.createElement("div");
+          div.className = "entry";
+          const span = document.createElement("span");
+          span.textContent = `${formatTime(start)} ~ ${formatTime(end)} (${label})`;
+          const delBtn = document.createElement("button");
+          delBtn.textContent = "×";
+          delBtn.onclick = () => {
+            entries.splice(i, 1);
+            extensionCount--;
+            refreshEntries();
+          };
+
+          div.appendChild(span);
+          div.appendChild(delBtn);
+          timeTd.appendChild(div);
+
+          latestTime = new Date(end);
+          entries[i] = start;
+        }
+      }
+
+      enterBtn.onclick = () => {
+        if (!input) {
+          latestTime = new Date();
+          input = document.createElement("input");
+          input.value = formatTime(latestTime); input.maxLength = 5;
+          input.classList.add("medium-input"); input.style.width = "80px";
+          input.addEventListener("input", () => {
+      if (!/^[0-9]{0,2}:[0-9]{0,2}$/.test(input.value)) {
+        input.value = input.value.replace(/[^0-9:]/g, "").slice(0, 5);
+      }
+    });
+    input.addEventListener("change", () => {
+            refreshEntries();
+          });
+          timeTd.appendChild(input);
+          return;
+        }
+
+        if (input.value) {
+          if (extensionCount === 0) {
+            latestTime = parseTimeString(input.value);
+          }
+        }
+
+        entries.push(new Date(latestTime));
+        extensionCount++;
+        refreshEntries();
+      };
+
+      btnTd.appendChild(enterBtn);
+      row.appendChild(btnTd);
+
+      const resetTd = document.createElement("td");
+      const resetBtn = document.createElement("button");
+      resetBtn.textContent = "초기화";
+      resetBtn.onclick = () => {
+        if (confirm("정말 초기화하시겠습니까?")) {
+          timeTd.innerHTML = "";
+          extensionCount = 0;
+          latestTime = null;
+          input = null;
+          entries = [];
+        }
+      };
+      resetTd.appendChild(resetBtn);
+      row.appendChild(resetTd);
+
+      tableBody.appendChild(row);
+    }
+
+    for (let i = 0; i < MAX_PEOPLE; i++) {
+      createRow(i);
+    }
+  
+    function saveData() {
+      const data = [];
+      document.querySelectorAll("tbody tr").forEach(row => {
+        const name = row.querySelector("td:nth-child(1) input").value;
+        const store = row.querySelector("td:nth-child(2) input").value;
+        const times = Array.from(row.querySelectorAll(".entry input")).map(input => input.value);
+        data.push({ name, store, times });
+      });
+      localStorage.setItem("visitationData", JSON.stringify(data));
+    }
+
+    function loadData() {
+      const saved = localStorage.getItem("visitationData");
+      if (!saved) return;
+      const data = JSON.parse(saved);
+      const tbody = document.querySelector("tbody");
+      data.forEach(entry => {
+        const row = addPerson();
+        row.querySelector("td:nth-child(1) input").value = entry.name;
+        row.querySelector("td:nth-child(2) input").value = entry.store;
+        const timeCell = row.querySelector(".time-cell");
+        entry.times.forEach(timeStr => {
+          const entryDiv = document.createElement("div");
+          entryDiv.className = "entry";
+          const input = document.createElement("input");
+          input.value = timeStr;
+          input.style.width = "80px";
+          input.maxLength = 5;
+          input.addEventListener("input", () => {
+            if (!/^[0-9]{0,2}:[0-9]{0,2}$/.test(input.value)) {
+              input.value = input.value.replace(/[^0-9:]/g, "").slice(0, 5);
+            }
+          });
+          input.addEventListener("change", () => {
+            updateExtendedTimes(timeCell);
+            saveData();
+          });
+          const removeBtn = document.createElement("button");
+          removeBtn.textContent = "×";
+          removeBtn.className = "remove-btn";
+          removeBtn.onclick = () => {
+            entryDiv.remove();
+            updateExtendedTimes(timeCell);
+            saveData();
+          };
+          entryDiv.appendChild(input);
+          entryDiv.appendChild(removeBtn);
+          timeCell.appendChild(entryDiv);
+        });
+      });
+    }
+
+    function clearAllData() {
+      if (confirm("정말 모든 데이터를 초기화하시겠습니까?")) {
+        localStorage.removeItem("visitationData");
+        location.reload();
+      }
+    }
+
+    window.addEventListener("beforeunload", saveData);
+    window.addEventListener("DOMContentLoaded", loadData);
+
+</script>
+</body>
+</html>
